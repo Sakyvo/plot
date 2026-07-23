@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  appVersion,
   browseFolder,
+  checkForUpdate,
   checkLocks,
+  GITHUB_REPO_URL,
   getSettings,
   onProcessProgress,
   onScanProgress,
   openPlotTemp,
   openPack,
+  openUrl,
   processPacks,
   revealPack,
   saveSettings,
@@ -14,9 +18,16 @@ import {
   scanPath,
 } from "./ipc";
 import { detectLang, isLang, t, LANGS, type Lang } from "./i18n";
-import { FolderIcon, GlobeIcon, MoonIcon, RefreshIcon } from "./icons";
+import {
+  FolderIcon,
+  GlobeIcon,
+  MoonIcon,
+  RefreshIcon,
+  UpdateCheckIcon,
+} from "./icons";
 import { GROUP_ORDER, hasGroupTag, hasLunarTag, showLunarBadge } from "./groups";
 import PackList, { mcMenuCompare } from "./PackList";
+import githubIcon from "./assets/github.ico";
 import type {
   Category,
   PackEntry,
@@ -24,7 +35,13 @@ import type {
   ProgressEvent,
   ScanReport,
   Settings,
+  UpdateInfo,
 } from "./types";
+
+/** Manual check only — startup never sets these. */
+type ManualNotice =
+  | { kind: "latest"; current: string }
+  | { kind: "failed" };
 
 /** Confirm dialog: same severity order as main page, without normal. */
 const CONFIRM_GROUP_ORDER: Category[] = GROUP_ORDER.filter((c) => c !== "normal");
@@ -81,6 +98,9 @@ export default function App() {
   const [pathInput, setPathInput] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [locked, setLocked] = useState<string[]>([]);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [manualNotice, setManualNotice] = useState<ManualNotice | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -95,6 +115,12 @@ export default function App() {
       setReport(first);
       setScanProgress(null);
     })();
+    // Fire-and-forget: never block UI; timeout / error / no update → no dialog.
+    checkForUpdate()
+      .then((info) => {
+        if (info) setUpdate(info);
+      })
+      .catch(() => {});
     const cleanups: (() => void)[] = [];
     onProcessProgress(setProgress).then((un) => cleanups.push(un));
     onScanProgress(setScanProgress).then((un) => cleanups.push(un));
@@ -107,6 +133,25 @@ export default function App() {
     cleanups.push(() => document.removeEventListener("contextmenu", onCtx));
     return () => cleanups.forEach((un) => un());
   }, []);
+
+  const runManualCheck = useCallback(async () => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    setManualNotice(null);
+    try {
+      const info = await checkForUpdate();
+      if (info) {
+        setUpdate(info);
+      } else {
+        const current = await appVersion().catch(() => "?");
+        setManualNotice({ kind: "latest", current });
+      }
+    } catch {
+      setManualNotice({ kind: "failed" });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [checkingUpdate]);
 
   useEffect(() => {
     if (!menu) return;
@@ -336,6 +381,27 @@ export default function App() {
             onOpen={(name) => openPack(report.path, name)}
           />
           <div className="actions">
+            <button
+              type="button"
+              className="icon-btn github-btn"
+              title={t(lang, "githubOpen")}
+              aria-label={t(lang, "githubOpen")}
+              onClick={() => openUrl(GITHUB_REPO_URL)}
+            >
+              <img src={githubIcon} alt="" />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title={t(lang, "checkUpdate")}
+              aria-label={t(lang, "checkUpdate")}
+              aria-busy={checkingUpdate}
+              disabled={checkingUpdate}
+              onClick={runManualCheck}
+            >
+              <UpdateCheckIcon />
+            </button>
+            <span className="actions-spacer" />
             {/* Fixed English per user request — not i18n */}
             <span className="files-total">
               {report.entries.length} files in total
@@ -362,6 +428,27 @@ export default function App() {
 
       {(report.status === "missing_dir" || report.status === "no_packs") && (
         <div className="actions">
+          <button
+            type="button"
+            className="icon-btn github-btn"
+            title={t(lang, "githubOpen")}
+            aria-label={t(lang, "githubOpen")}
+            onClick={() => openUrl(GITHUB_REPO_URL)}
+          >
+            <img src={githubIcon} alt="" />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title={t(lang, "checkUpdate")}
+            aria-label={t(lang, "checkUpdate")}
+            aria-busy={checkingUpdate}
+            disabled={checkingUpdate}
+            onClick={runManualCheck}
+          >
+            <UpdateCheckIcon />
+          </button>
+          <span className="actions-spacer" />
           <span className="files-total">
             {report.entries.length} files in total
           </span>
@@ -502,6 +589,66 @@ export default function App() {
               </button>
               <button onClick={() => openPlotTemp()}>{t(lang, "openPlotTemp")}</button>
               <button className="primary" onClick={() => setResult(null)}>
+                {t(lang, "close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {update && (
+        <div className="modal-backdrop">
+          <div
+            className="modal wide"
+            role="dialog"
+            aria-label={t(lang, "updateTitle", { version: update.version })}
+          >
+            <h2>{t(lang, "updateTitle", { version: update.version })}</h2>
+            <p className="update-meta">
+              {t(lang, "updateCurrent", { version: update.current_version })}
+            </p>
+            <div className="modal-body scroll-both">
+              <p className="update-notes-label">{t(lang, "updateNotes")}</p>
+              <pre className="update-notes">
+                {update.body.trim() ? update.body : t(lang, "updateNoNotes")}
+              </pre>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setUpdate(null)}>{t(lang, "updateLater")}</button>
+              <button
+                className="primary"
+                onClick={() => openUrl(update.download_url)}
+              >
+                {t(lang, "updateDownload")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {manualNotice && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-label={
+              manualNotice.kind === "latest"
+                ? t(lang, "updateLatestTitle")
+                : t(lang, "updateFailedTitle")
+            }
+          >
+            <h2>
+              {manualNotice.kind === "latest"
+                ? t(lang, "updateLatestTitle")
+                : t(lang, "updateFailedTitle")}
+            </h2>
+            <p className="update-meta">
+              {manualNotice.kind === "latest"
+                ? t(lang, "updateLatestBody", { version: manualNotice.current })
+                : t(lang, "updateFailedBody")}
+            </p>
+            <div className="modal-actions">
+              <button className="primary" onClick={() => setManualNotice(null)}>
                 {t(lang, "close")}
               </button>
             </div>

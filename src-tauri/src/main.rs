@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod settings;
+mod update;
 
 use std::path::PathBuf;
 
@@ -171,6 +172,30 @@ fn open_path_shell(path: &std::path::Path) -> Result<(), String> {
     Err(format!("open not supported on this platform: {}", path.display()))
 }
 
+/// Open http(s) / any URL with the system default handler (browser for https).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("only http(s) URLs are allowed".into());
+    }
+    open_path_shell(std::path::Path::new(&url))
+}
+
+/// Startup update probe. `null` when already latest, no release, or soft 404.
+/// Transport / timeout errors surface as Err — UI must stay silent either way.
+#[tauri::command]
+async fn check_for_update() -> Result<Option<update::UpdateInfo>, String> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    tauri::async_runtime::spawn_blocking(move || update::check_latest(&current))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// Friendly bilingual guidance instead of a cryptic crash on stripped-down
@@ -215,6 +240,9 @@ fn main() {
             open_plot_temp,
             reveal_pack,
             open_pack,
+            open_url,
+            check_for_update,
+            app_version,
             get_settings,
             save_settings
         ])

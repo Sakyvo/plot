@@ -25,6 +25,7 @@ Minecraft 1.8 PotPvP 材质包修复工具：扫描 resourcepacks，按「MC 1.8
 - 处理顺序不可倒置：先移原件入 problematic_packs，再写产物（tmp → rename）；任何写入 resourcepacks 的路径必经 `unique_target`，绝不覆盖
 - 扫描/处理永不触碰：顶层垃圾文件名单条目、plot_temp、exe 自身
 - 新增行为先红后绿，测试只落在两条已定缝（engine 公共 API / mock ipc 组件测试）
+- **改完自动编译**：功能/UI/引擎/command 等会影响可运行产物的改动，在测试通过后**主动**执行 `npm run tauri build`，不必等用户说「编译」；若 `plot.exe` 被占用先结束进程再编；纯文档/注释/仅测用例且不改运行逻辑时可跳过；用户明确说先别编则遵从
 
 ## 按需读取索引
 - 涉及领域术语（五分类/拯救家族/死路径等）→ 读 `CONTEXT.md`

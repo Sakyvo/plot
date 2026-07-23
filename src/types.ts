@@ -53,3 +53,13 @@ export interface Settings {
   language?: string | null;
   custom_path?: string | null;
 }
+
+/** Non-null only when GitHub latest release is newer than this build. */
+export interface UpdateInfo {
+  version: string;
+  tag: string;
+  body: string;
+  download_url: string;
+  html_url: string;
+  current_version: string;
+}

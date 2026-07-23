@@ -20,6 +20,9 @@ beforeEach(() => {
   mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
   mocked.saveSettings.mockResolvedValue(undefined);
   mocked.checkLocks.mockResolvedValue([]);
+  mocked.checkForUpdate.mockResolvedValue(null);
+  mocked.openUrl.mockResolvedValue(undefined);
+  mocked.appVersion.mockResolvedValue("0.1.0");
   setNavigatorLanguage("zh-CN");
 });
 
@@ -621,6 +624,98 @@ test("footer shows fixed English files-in-total count", async () => {
 
   render(<App />);
   expect(await screen.findByText("3 files in total")).toBeTruthy();
+});
+
+test("footer GitHub button opens the repository URL", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "在 GitHub 打开" }));
+  expect(mocked.openUrl).toHaveBeenCalledWith(ipc.GITHUB_REPO_URL);
+});
+
+test("startup update dialog shows notes and download opens asset URL", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+  mocked.checkForUpdate.mockResolvedValue({
+    version: "0.2.0",
+    tag: "v0.2.0",
+    body: "## Fixed\n- nested unwrap",
+    download_url: "https://github.com/Sakyvo/plot/releases/download/v0.2.0/plot.exe",
+    html_url: "https://github.com/Sakyvo/plot/releases/tag/v0.2.0",
+    current_version: "0.1.0",
+  });
+
+  render(<App />);
+  const dialog = await screen.findByRole("dialog", { name: /发现新版本 0\.2\.0/ });
+  expect(within(dialog).getByText(/nested unwrap/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "下载" }));
+  expect(mocked.openUrl).toHaveBeenCalledWith(
+    "https://github.com/Sakyvo/plot/releases/download/v0.2.0/plot.exe",
+  );
+});
+
+test("startup update check failure stays silent", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+  mocked.checkForUpdate.mockRejectedValue(new Error("timeout"));
+
+  render(<App />);
+  expect(await screen.findByText("1 files in total")).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: /发现新版本/ })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "无法检查更新" })).toBeNull();
+});
+
+test("manual check with no update shows latest dialog", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+  mocked.checkForUpdate.mockResolvedValue(null);
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "检测更新" }));
+  const dialog = await screen.findByRole("dialog", { name: "已是最新版本" });
+  expect(within(dialog).getByText(/0\.1\.0/)).toBeTruthy();
+});
+
+test("manual check failure shows connection error dialog", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+  // Startup call rejects silently; subsequent manual click rejects with dialog.
+  mocked.checkForUpdate
+    .mockRejectedValueOnce(new Error("startup-timeout"))
+    .mockRejectedValueOnce(new Error("manual-timeout"));
+
+  render(<App />);
+  expect(await screen.findByText("1 files in total")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "检测更新" }));
+  expect(await screen.findByRole("dialog", { name: "无法检查更新" })).toBeTruthy();
+});
+
+test("manual check with update shows download dialog", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "a.zip" })] }),
+  );
+  mocked.checkForUpdate
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce({
+      version: "0.3.0",
+      tag: "v0.3.0",
+      body: "manual notes",
+      download_url: "https://example.com/plot.exe",
+      html_url: "https://example.com/rel",
+      current_version: "0.1.0",
+    });
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "检测更新" }));
+  const dialog = await screen.findByRole("dialog", { name: /发现新版本 0\.3\.0/ });
+  expect(within(dialog).getByText(/manual notes/)).toBeTruthy();
 });
 
 test("empty pack folder still shows 0 files in total", async () => {

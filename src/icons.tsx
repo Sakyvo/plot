@@ -46,3 +46,12 @@ export function LocateIcon() {
 export function MoonIcon() {
   return <Svg d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z" />;
 }
+
+/** Download-arrow: distinct from toolbar RefreshIcon (rescan). */
+export function UpdateCheckIcon() {
+  return (
+    <Svg d="M12 3v12M7 10l5 5 5-5">
+      <path d="M5 19h14" />
+    </Svg>
+  );
+}

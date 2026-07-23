@@ -330,10 +330,49 @@ button:hover {
   gap: 12px;
 }
 
+.actions-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.github-btn img {
+  width: 18px;
+  height: 18px;
+  display: block;
+  /* ICO is dark-on-transparent; invert for dark UI chrome */
+  filter: invert(1);
+  opacity: 0.85;
+}
+
+.github-btn:hover img {
+  opacity: 1;
+}
+
 .files-total {
-  margin-right: auto;
   color: var(--text-dim);
   font-size: 13px;
+}
+
+.update-meta {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.update-notes-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.update-notes {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 .confirm-group {
