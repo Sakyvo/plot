@@ -42,3 +42,18 @@ fn folder_packs_never_join_the_precheck() {
     let _lock = hold(&folder.join("pack.mcmeta"));
     assert!(probe_locked(&rp, &["FolderPack".to_string()]).is_empty());
 }
+
+#[test]
+fn classified_file_packs_are_reported_by_relative_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rp = tmp.path().join("rp");
+    let category = rp.join("PotPvP");
+    fs::create_dir_all(&category).unwrap();
+    make_zip(&category.join("InUse.zip"), &core_entries());
+    make_zip(&category.join("Free.zip"), &core_entries());
+
+    let _lock = hold(&category.join("InUse.zip"));
+    let names = vec!["PotPvP/InUse.zip".into(), "PotPvP/Free.zip".into()];
+
+    assert_eq!(probe_locked(&rp, &names), vec!["PotPvP/InUse.zip"]);
+}

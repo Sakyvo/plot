@@ -25,7 +25,9 @@ fn save_settings(app: tauri::AppHandle, new_settings: settings::Settings) -> Res
 
 fn default_resourcepacks_path() -> PathBuf {
     let appdata = std::env::var("APPDATA").unwrap_or_default();
-    PathBuf::from(appdata).join(".minecraft").join("resourcepacks")
+    PathBuf::from(appdata)
+        .join(".minecraft")
+        .join("resourcepacks")
 }
 
 fn scan_options() -> engine::ScanOptions {
@@ -55,6 +57,12 @@ async fn scan_default(window: tauri::Window) -> engine::ScanReport {
     scan_dir(window, default_resourcepacks_path()).await
 }
 
+/// Just the default path string — no IO, used to prefill the landing screen.
+#[tauri::command]
+fn default_dir() -> String {
+    default_resourcepacks_path().to_string_lossy().into_owned()
+}
+
 #[tauri::command]
 async fn scan_path(window: tauri::Window, path: String) -> engine::ScanReport {
     scan_dir(window, PathBuf::from(path)).await
@@ -78,6 +86,7 @@ async fn process_packs(
     let opts = engine::ProcessOptions {
         resourcepacks: PathBuf::from(&path),
         plot_temp: plot_temp_dir()?,
+        run_dir_name: engine::default_run_dir_name(),
     };
     tauri::async_runtime::spawn_blocking(move || {
         engine::process_with_progress(&opts, &mut |ev| {
@@ -97,9 +106,21 @@ fn check_locks(path: String, names: Vec<String>) -> Vec<String> {
     engine::probe_locked(std::path::Path::new(&path), &names)
 }
 
+/// With a validated run-folder name, opens that batch; anything else (or a
+/// bad name) falls back to the plot_temp root.
 #[tauri::command]
-fn open_plot_temp() -> Result<(), String> {
-    let dir = plot_temp_dir()?;
+fn open_plot_temp(run_dir: Option<String>) -> Result<(), String> {
+    let root = plot_temp_dir()?;
+    let single_component = |name: &str| {
+        !name.is_empty()
+            && !name.contains(['/', '\\'])
+            && name != "."
+            && name != ".."
+    };
+    let dir = match run_dir.as_deref() {
+        Some(name) if single_component(name) => root.join(name),
+        _ => root,
+    };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::process::Command::new("explorer")
         .arg(&dir)
@@ -145,7 +166,9 @@ fn open_path_shell(path: &std::path::Path) -> Result<(), String> {
         ) -> isize;
     }
     let wide = |s: &std::ffi::OsStr| {
-        s.encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>()
+        s.encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
     };
     let file = wide(path.as_os_str());
     let op: Vec<u16> = "open\0".encode_utf16().collect();
@@ -169,7 +192,10 @@ fn open_path_shell(path: &std::path::Path) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn open_path_shell(path: &std::path::Path) -> Result<(), String> {
-    Err(format!("open not supported on this platform: {}", path.display()))
+    Err(format!(
+        "open not supported on this platform: {}",
+        path.display()
+    ))
 }
 
 /// Open http(s) / any URL with the system default handler (browser for https).
@@ -235,6 +261,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             scan_default,
             scan_path,
+            default_dir,
             process_packs,
             check_locks,
             open_plot_temp,

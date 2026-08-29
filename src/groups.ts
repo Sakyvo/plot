@@ -1,6 +1,6 @@
 import type { Category, PackEntry } from "./types";
 
-/// Card / list display order: 非法 → 嵌套 → Lunar非法 → 文件夹 → 臃肿 → 正常.
+/// Card / list display order: 非法 → 嵌套 → Lunar非法 → 文件夹 → 臃肿 → 正常 → 忽略.
 export const GROUP_ORDER: Category[] = [
   "illegal",
   "nested",
@@ -8,6 +8,7 @@ export const GROUP_ORDER: Category[] = [
   "folder",
   "bloated",
   "normal",
+  "ignored",
 ];
 
 /** List-anchor group (primary category from the engine). */

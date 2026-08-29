@@ -7,6 +7,9 @@ pub struct Settings {
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_path: Option<String>,
+    /// Absent means false: startup never auto-scans unless explicitly enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_scan_on_start: Option<bool>,
 }
 
 /// Missing or corrupt files fall back to defaults — settings are never fatal.
@@ -51,6 +54,7 @@ mod tests {
         let s = Settings {
             language: Some("zh-TW".into()),
             custom_path: Some("D:\\mc\\resourcepacks".into()),
+            auto_scan_on_start: Some(true),
         };
         save(&p, &s).unwrap();
         assert_eq!(load(&p), s);
@@ -65,10 +69,12 @@ mod tests {
             &Settings {
                 language: Some("en".into()),
                 custom_path: None,
+                auto_scan_on_start: None,
             },
         )
         .unwrap();
         let text = std::fs::read_to_string(&p).unwrap();
         assert!(!text.contains("custom_path"));
+        assert!(!text.contains("auto_scan_on_start"));
     }
 }

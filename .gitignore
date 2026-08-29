@@ -1,6 +1,5 @@
 node_modules/
-dist/
-target/
+.target/
 plot_temp/
 
 # Agent / local workflow (not product source)

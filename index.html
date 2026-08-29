@@ -4,10 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Plot</title>
-    <style>html, body { background: #16181d; }</style>
+    <style>
+      /* First-paint skeleton: mirrors .boot-skeleton in App.css (JS bundle has
+         not executed yet, so keep these rules self-contained and in sync). */
+      html, body { background: #16181d; margin: 0; }
+      body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+      #root { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+      .boot-skeleton { flex: 1; display: flex; flex-direction: column; padding: 16px 20px; gap: 12px; }
+      .skel-toolbar { display: flex; align-items: center; gap: 10px; }
+      .skel-block { display: block; background: #1e2128; border: 1px solid #2a2e37; border-radius: 6px; animation: skel-pulse 1.4s ease-in-out infinite; }
+      .skel-icon { width: 30px; height: 30px; flex: none; }
+      .skel-path { width: min(340px, 38vw); height: 30px; }
+      .skel-search { margin-left: auto; flex: 1; max-width: 340px; height: 30px; }
+      .skel-landing { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+      .skel-line { width: 220px; height: 14px; border: none; }
+      .skel-btn { width: 96px; height: 32px; }
+      @keyframes skel-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Replaced by React exactly at first mount; same classes as App.css. -->
+      <div class="boot-skeleton">
+        <div class="skel-toolbar">
+          <span class="skel-block skel-icon"></span>
+          <span class="skel-block skel-path"></span>
+          <span class="skel-block skel-search"></span>
+          <span class="skel-block skel-icon"></span>
+          <span class="skel-block skel-icon"></span>
+        </div>
+        <div class="skel-landing">
+          <span class="skel-block skel-line"></span>
+          <span class="skel-block skel-btn"></span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

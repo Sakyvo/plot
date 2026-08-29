@@ -52,7 +52,7 @@ npm install
 npm run tauri dev
 npm run test
 cargo test
-npm run tauri build    # → target/release/plot.exe
+npm run tauri build    # → .target/cargo/release/plot.exe
 ```
 
 | Path | Role |

@@ -2,6 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+/// Fixed run-folder name injected into ProcessOptions — deterministic tests.
+pub const RUN: &str = "Plot_2026-08-23_13.46.34";
+
 /// Creates a zip file at `path` with the given (entry_name, bytes) pairs.
 pub fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
     let file = fs::File::create(path).unwrap();
@@ -9,7 +12,8 @@ pub fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
     let options: zip::write::SimpleFileOptions = Default::default();
     for (name, bytes) in entries {
         if name.ends_with('/') {
-            zip.add_directory(name.trim_end_matches('/'), options).unwrap();
+            zip.add_directory(name.trim_end_matches('/'), options)
+                .unwrap();
         } else {
             zip.start_file(*name, options).unwrap();
             zip.write_all(bytes).unwrap();
@@ -22,6 +26,7 @@ pub fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
 pub const MCMETA: &[u8] = br#"{"pack":{"pack_format":1,"description":"test"}}"#;
 
 /// Standard three-core entry set for a normal pack.
+#[allow(dead_code)]
 pub fn core_entries() -> Vec<(&'static str, &'static [u8])> {
     vec![
         ("pack.mcmeta", MCMETA),
@@ -32,6 +37,7 @@ pub fn core_entries() -> Vec<(&'static str, &'static [u8])> {
 
 /// Creates a zip then flips the encryption bit in every local and central header,
 /// mimicking a password-protected archive.
+#[allow(dead_code)]
 pub fn make_encrypted_zip(path: &Path, entries: &[(&str, &[u8])]) {
     make_zip(path, entries);
     let mut bytes = fs::read(path).unwrap();

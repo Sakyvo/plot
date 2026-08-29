@@ -1,23 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Plot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "dev.plot.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "frontendDist": "../.target/frontend"
   },
   "app": {
     "windows": [
       {
         "label": "main",
         "title": "Plot",
-        "width": 920,
-        "height": 640,
-        "minWidth": 760,
-        "minHeight": 540,
+        "width": 1120,
+        "height": 720,
+        "minWidth": 920,
+        "minHeight": 600,
         "center": true,
         "theme": "Dark",
         "backgroundColor": "#16181d"

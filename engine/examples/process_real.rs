@@ -6,6 +6,7 @@ fn main() {
     let opts = engine::ProcessOptions {
         resourcepacks: rp.clone().into(),
         plot_temp: pt.into(),
+        run_dir_name: engine::default_run_dir_name(),
     };
     let report = engine::process(&opts).expect("process failed");
     for o in &report.outcomes {

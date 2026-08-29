@@ -1,3 +1,5 @@
+import type { IgnoreReason } from "./types";
+
 export type Lang = "zh-CN" | "zh-TW" | "en";
 
 export const LANGS: { value: Lang; label: string }[] = [
@@ -43,10 +45,13 @@ const catalogs: Record<Lang, Messages> = {
     overview: "分类概览",
     catNormal: "正常",
     catNested: "嵌套",
-    catFolder: "文件夹",
+    catFolder: "分类文件夹",
     catBloated: "臃肿",
     catIllegal: "非法",
     catLunarIllegal: "Lunar非法",
+    catIgnored: "忽略",
+    ignoreModernTextureLayout: "检测到高版本纹理目录 {paths}，可能是高版本材质",
+    ignoreUnknown: "已忽略（原因未知）",
     lunarBadge: "含非法 JSON 转义，Lunar 可能读不进",
     processBtn: "处理",
     confirmTitle: "确认处理",
@@ -64,17 +69,27 @@ const catalogs: Record<Lang, Messages> = {
     groupConverted: "转换成功",
     groupIllegal: "已移入非法区",
     groupSkipped: "失败 / 跳过",
+    groupIgnored: "已忽略（未处理）",
+    separatedFrom: "由 {parent} 分离",
+    attachmentsKeptInOriginalArchive: "附件保留在原始压缩文件中",
+    resultRescanFailed: "处理后重新扫描失败，已显示处理结果：{msg}",
     copyResult: "复制结果",
-    openPlotTemp: "打开 plot_temp",
+    openBatchOutput: "打开本次输出",
     close: "关闭",
     rarHint: "检测到 RAR/7z 压缩包，Plot v1 无法解析，请手动解压后重新扫描",
     processError: "处理失败：{msg}",
+    settings: "设置",
     language: "语言",
+    autoScanOnStart: "启动时自动扫描",
+    startScan: "开始扫描",
+    landingHint: "尚未扫描：确认上方目录后点击开始",
     reveal: "定位文件位置",
     searchPlaceholder: "搜索材质名",
     clearSearch: "清除搜索",
     emptyList: "无",
     clickToOpen: "点击打开",
+    expandFolder: "展开 {name}",
+    collapseFolder: "折叠 {name}",
     githubOpen: "在 GitHub 打开",
     checkUpdate: "检测更新",
     updateTitle: "发现新版本 {version}",
@@ -101,10 +116,13 @@ const catalogs: Record<Lang, Messages> = {
     overview: "分類概覽",
     catNormal: "正常",
     catNested: "嵌套",
-    catFolder: "資料夾",
+    catFolder: "分類資料夾",
     catBloated: "臃腫",
     catIllegal: "非法",
     catLunarIllegal: "Lunar非法",
+    catIgnored: "忽略",
+    ignoreModernTextureLayout: "偵測到高版本材質目錄 {paths}，可能是高版本材質",
+    ignoreUnknown: "已忽略（原因不明）",
     lunarBadge: "含非法 JSON 跳脫，Lunar 可能讀不進",
     processBtn: "處理",
     confirmTitle: "確認處理",
@@ -122,17 +140,27 @@ const catalogs: Record<Lang, Messages> = {
     groupConverted: "轉換成功",
     groupIllegal: "已移入非法區",
     groupSkipped: "失敗 / 跳過",
+    groupIgnored: "已忽略（未處理）",
+    separatedFrom: "由 {parent} 分離",
+    attachmentsKeptInOriginalArchive: "附件保留在原始壓縮檔中",
+    resultRescanFailed: "處理後重新掃描失敗，已顯示處理結果：{msg}",
     copyResult: "複製結果",
-    openPlotTemp: "開啟 plot_temp",
+    openBatchOutput: "打開本次輸出",
     close: "關閉",
     rarHint: "偵測到 RAR/7z 壓縮檔，Plot v1 無法解析，請手動解壓後重新掃描",
     processError: "處理失敗：{msg}",
+    settings: "設置",
     language: "語言",
+    autoScanOnStart: "啟動時自動掃描",
+    startScan: "開始掃描",
+    landingHint: "尚未掃描：確認上方目錄後點擊開始",
     reveal: "定位檔案位置",
     searchPlaceholder: "搜尋材質名",
     clearSearch: "清除搜尋",
     emptyList: "無",
     clickToOpen: "點擊開啟",
+    expandFolder: "展開 {name}",
+    collapseFolder: "收合 {name}",
     githubOpen: "在 GitHub 開啟",
     checkUpdate: "檢查更新",
     updateTitle: "發現新版本 {version}",
@@ -160,10 +188,13 @@ const catalogs: Record<Lang, Messages> = {
     overview: "Category overview",
     catNormal: "Normal",
     catNested: "Nested",
-    catFolder: "Folder",
+    catFolder: "Category folders",
     catBloated: "Bloated",
     catIllegal: "Illegal",
     catLunarIllegal: "Illegal in LC",
+    catIgnored: "Ignored",
+    ignoreModernTextureLayout: "Detected modern texture path {paths}; this may be a modern pack",
+    ignoreUnknown: "Ignored (unknown reason)",
     lunarBadge: "Invalid JSON escape — Lunar may hide this pack",
     processBtn: "Fix",
     confirmTitle: "Confirm processing",
@@ -181,18 +212,28 @@ const catalogs: Record<Lang, Messages> = {
     groupConverted: "Converted",
     groupIllegal: "Quarantined",
     groupSkipped: "Failed / skipped",
+    groupIgnored: "Ignored (not processed)",
+    separatedFrom: "separated from {parent}",
+    attachmentsKeptInOriginalArchive: "Attachments kept in the original archive",
+    resultRescanFailed: "Post-processing rescan failed; completed results are shown: {msg}",
     copyResult: "Copy results",
-    openPlotTemp: "Open plot_temp",
+    openBatchOutput: "Open this run's output",
     close: "Close",
     rarHint:
       "RAR/7z archive detected — Plot v1 cannot parse it, extract it manually and rescan",
     processError: "Processing failed: {msg}",
+    settings: "Settings",
     language: "Language",
+    autoScanOnStart: "Scan automatically on startup",
+    startScan: "Start scan",
+    landingHint: "Not scanned yet — check the folder above, then start",
     reveal: "Reveal in Explorer",
     searchPlaceholder: "Search packs",
     clearSearch: "Clear search",
     emptyList: "None",
     clickToOpen: "Click to open",
+    expandFolder: "Expand {name}",
+    collapseFolder: "Collapse {name}",
     githubOpen: "Open on GitHub",
     checkUpdate: "Check for updates",
     updateTitle: "Update available: {version}",
@@ -216,6 +257,18 @@ export function t(lang: Lang, key: string, vars?: Record<string, string | number
     }
   }
   return text;
+}
+
+export function ignoreReasonText(lang: Lang, reason: IgnoreReason | null | undefined): string {
+  if (!reason) return t(lang, "ignoreUnknown");
+  switch (reason.key) {
+    case "modern_texture_layout":
+      return t(lang, "ignoreModernTextureLayout", {
+        paths: reason.values.join(lang === "en" ? ", " : "、"),
+      });
+    default:
+      return t(lang, "ignoreUnknown");
+  }
 }
 
 /// Every catalog must cover every key — checked by tests.

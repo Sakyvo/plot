@@ -1,0 +1,3 @@
+[build]
+# Stable, workspace-shared compiler cache — reused across issues, never routinely cleaned.
+target-dir = ".target/cargo"

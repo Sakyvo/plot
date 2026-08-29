@@ -1,6 +1,6 @@
 mod common;
 
-use common::{core_entries, make_zip};
+use common::{core_entries, make_zip, RUN};
 use engine::{process, ProcessOptions};
 use std::fs;
 
@@ -8,6 +8,7 @@ fn opts_for(tmp: &tempfile::TempDir) -> ProcessOptions {
     ProcessOptions {
         resourcepacks: tmp.path().join("rp"),
         plot_temp: tmp.path().join("plot_temp"),
+        run_dir_name: RUN.into(),
     }
 }
 
@@ -28,8 +29,9 @@ fn illegal_entries_are_moved_into_illegal_packs() {
     assert!(!rp.join("garbage.txt").exists(), "original should be gone");
     assert!(tmp
         .path()
-        .join("plot_temp/illegal_packs/garbage.txt")
+        .join(format!("plot_temp/{RUN}/illegal_packs/garbage.txt"))
         .exists());
+    assert_eq!(report.run_dir.as_deref(), Some(RUN));
     assert!(rp.join("good.zip").exists(), "normal pack untouched");
     let outcome = report
         .outcomes
@@ -40,19 +42,33 @@ fn illegal_entries_are_moved_into_illegal_packs() {
 }
 
 #[test]
-fn moving_a_second_illegal_with_the_same_name_gets_a_suffix() {
+fn a_same_second_run_lands_in_a_suffixed_run_folder() {
     let tmp = tempfile::tempdir().unwrap();
     setup(&tmp);
     let rp = tmp.path().join("rp");
 
     fs::write(rp.join("junk.bin"), b"one").unwrap();
-    process(&opts_for(&tmp)).unwrap();
+    let first = process(&opts_for(&tmp)).unwrap();
     fs::write(rp.join("junk.bin"), b"two").unwrap();
-    process(&opts_for(&tmp)).unwrap();
+    let second = process(&opts_for(&tmp)).unwrap();
 
-    let quarantine = tmp.path().join("plot_temp/illegal_packs");
-    assert!(quarantine.join("junk.bin").exists());
-    assert!(quarantine.join("junk (1).bin").exists());
+    // Same run name at the same second: the second batch is suffixed, and each
+    // batch keeps the original under its plain name — no cross-run suffixing.
+    let suffixed = format!("{RUN} (1)");
+    assert_eq!(first.run_dir.as_deref(), Some(RUN));
+    assert_eq!(second.run_dir.as_deref(), Some(suffixed.as_str()));
+    assert!(tmp
+        .path()
+        .join(format!("plot_temp/{RUN}/illegal_packs/junk.bin"))
+        .exists());
+    assert!(tmp
+        .path()
+        .join(format!("plot_temp/{suffixed}/illegal_packs/junk.bin"))
+        .exists());
+    assert!(!tmp
+        .path()
+        .join(format!("plot_temp/{RUN}/illegal_packs/junk (1).bin"))
+        .exists());
 }
 
 #[test]
@@ -66,6 +82,7 @@ fn an_unwritable_plot_temp_location_fails_without_touching_anything() {
     let opts = ProcessOptions {
         resourcepacks: rp.clone(),
         plot_temp: tmp.path().join("blocker/plot_temp"),
+        run_dir_name: RUN.into(),
     };
 
     let result = process(&opts);
@@ -90,4 +107,28 @@ fn progress_reports_each_handled_pack() {
 
     assert!(seen.contains(&"a.txt".to_string()));
     assert!(seen.contains(&"b.txt".to_string()));
+}
+
+#[test]
+fn ignored_only_batch_is_a_read_only_noop() {
+    let tmp = tempfile::tempdir().unwrap();
+    setup(&tmp);
+    let rp = tmp.path().join("rp");
+    make_zip(
+        &rp.join("modern.zip"),
+        &[
+            (
+                "pack.mcmeta",
+                br#"{"pack":{"pack_format":5,"description":"modern"}}"#,
+            ),
+            ("assets/minecraft/textures/item/apple.png", b"x"),
+        ],
+    );
+
+    let report = process(&opts_for(&tmp)).unwrap();
+
+    assert!(report.outcomes.is_empty());
+    assert_eq!(report.run_dir, None, "empty batch creates no run folder");
+    assert!(rp.join("modern.zip").exists());
+    assert!(!tmp.path().join("plot_temp").exists());
 }

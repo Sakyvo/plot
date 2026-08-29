@@ -17,7 +17,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocked.onProcessProgress.mockResolvedValue(() => {});
   mocked.onScanProgress.mockResolvedValue(() => {});
-  mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
+  mocked.getSettings.mockResolvedValue({
+    language: "zh-CN",
+    auto_scan_on_start: true,
+  });
+  mocked.defaultDir.mockResolvedValue("C:\\default\\resourcepacks");
   mocked.saveSettings.mockResolvedValue(undefined);
   mocked.checkLocks.mockResolvedValue([]);
   mocked.checkForUpdate.mockResolvedValue(null);
@@ -34,7 +38,18 @@ function setNavigatorLanguage(tag: string) {
 }
 
 function entry(partial: Partial<PackEntry>): PackEntry {
-  return { name: "p.zip", category: "normal", causes: [], size_bytes: 1024, ...partial };
+  const name = partial.name ?? "p.zip";
+  return {
+    name,
+    relative_path: name,
+    parent_path: null,
+    kind: "pack",
+    category: "normal",
+    causes: [],
+    size_bytes: 1024,
+    ignore: null,
+    ...partial,
+  };
 }
 
 function report(partial: Partial<ScanReport>): ScanReport {
@@ -46,6 +61,7 @@ function report(partial: Partial<ScanReport>): ScanReport {
     bloated: 0,
     illegal: 0,
     lunar: 0,
+    ignored: 0,
   };
   for (const e of entries) {
     if (e.category === "lunar_illegal") {
@@ -60,7 +76,8 @@ function report(partial: Partial<ScanReport>): ScanReport {
       if (e.category !== "lunar_illegal") counts.lunar += 1;
     }
   }
-  return { path: "C:\\rp", status: "ok", entries, counts, ...partial };
+  const total_packs = entries.filter((entry) => entry.kind === "pack").length;
+  return { path: "C:\\rp", status: "ok", total_packs, entries, counts, ...partial };
 }
 
 function outcome(partial: Partial<PackOutcome>): PackOutcome {
@@ -70,6 +87,7 @@ function outcome(partial: Partial<PackOutcome>): PackOutcome {
     products: [],
     causes: [],
     detail: null,
+    separated: [],
     ...partial,
   };
 }
@@ -99,17 +117,22 @@ test("an empty resourcepacks folder shows the red no-packs notice", async () => 
   expect(await screen.findByText("未检测到材质包")).toBeTruthy();
 });
 
-test("counts overview shows six category cards in severity order", async () => {
+test("counts overview shows seven category cards with ignored last", async () => {
   mocked.scanDefault.mockResolvedValue(
     report({
       entries: [
         entry({ name: "a.zip", category: "normal" }),
         entry({ name: "b.zip", category: "normal" }),
         entry({ name: "c.zip", category: "nested" }),
-        entry({ name: "d", category: "folder" }),
+        entry({ name: "d", kind: "classification_folder", category: "folder" }),
         entry({ name: "e.zip", category: "bloated" }),
         entry({ name: "f.txt", category: "illegal" }),
         entry({ name: "otb.zip", category: "lunar_illegal", causes: ["lunar_escape"] }),
+        entry({
+          name: "meezoid.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
       ],
     }),
   );
@@ -118,13 +141,399 @@ test("counts overview shows six category cards in severity order", async () => {
 
   const overview = await screen.findByRole("group", { name: "分类概览" });
   const labels = [...overview.querySelectorAll(".card-label")].map((el) => el.textContent);
-  expect(labels).toEqual(["非法", "嵌套", "Lunar非法", "文件夹", "臃肿", "正常"]);
+  expect(labels).toEqual([
+    "非法",
+    "嵌套",
+    "Lunar非法",
+    "分类文件夹",
+    "臃肿",
+    "正常",
+    "忽略",
+  ]);
   expect(within(overview).getByText("正常").parentElement!.textContent).toContain("2");
   expect(within(overview).getByText("嵌套").parentElement!.textContent).toContain("1");
   expect(within(overview).getByText("Lunar非法").parentElement!.textContent).toContain("1");
-  expect(within(overview).getByText("文件夹").parentElement!.textContent).toContain("1");
+  expect(within(overview).getByText("分类文件夹").parentElement!.textContent).toContain("1");
   expect(within(overview).getByText("臃肿").parentElement!.textContent).toContain("1");
   expect(within(overview).getByText("非法").parentElement!.textContent).toContain("1");
+  expect(within(overview).getByText("忽略").parentElement!.textContent).toContain("1");
+  expect(
+    screen.getByText(
+      "检测到高版本纹理目录 assets/minecraft/textures/item，可能是高版本材质",
+    ),
+  ).toBeTruthy();
+});
+
+test("a classification folder is a parent view and not a processing problem", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      total_packs: 2,
+      counts: {
+        normal: 2,
+        nested: 0,
+        folder: 1,
+        bloated: 0,
+        illegal: 0,
+        lunar: 0,
+        ignored: 0,
+      },
+      entries: [
+        entry({
+          name: "PotPvP",
+          relative_path: "PotPvP",
+          parent_path: null,
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({
+          name: "A.zip",
+          relative_path: "PotPvP/A.zip",
+          parent_path: "PotPvP",
+          kind: "pack",
+        }),
+        entry({
+          name: "B.zip",
+          relative_path: "PotPvP/B.zip",
+          parent_path: "PotPvP",
+          kind: "pack",
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+
+  const overview = await screen.findByRole("group", { name: "分类概览" });
+  expect(within(overview).getByText("分类文件夹").parentElement!.textContent).toContain("1");
+  expect(screen.getByText("PotPvP")).toBeTruthy();
+  expect(screen.getByText("A.zip")).toBeTruthy();
+  expect(screen.getByText("B.zip")).toBeTruthy();
+  expect(screen.getByText("2 files in total")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "处理" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("top-level folders start expanded while deeper classification folders collapse", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "PotPvP",
+          relative_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({
+          name: "Melee",
+          relative_path: "PotPvP/Melee",
+          parent_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({
+          name: "A.zip",
+          relative_path: "PotPvP/Melee/A.zip",
+          parent_path: "PotPvP/Melee",
+        }),
+        entry({
+          name: "B.zip",
+          relative_path: "PotPvP/Melee/B.zip",
+          parent_path: "PotPvP/Melee",
+        }),
+        entry({
+          name: "UHC",
+          relative_path: "PotPvP/UHC",
+          parent_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("PotPvP")).toBeTruthy();
+  expect(screen.getByText("Melee")).toBeTruthy();
+  expect(screen.getByText("UHC")).toBeTruthy();
+  expect(screen.queryByText("A.zip")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "展开 Melee" }));
+  expect(screen.getByText("A.zip")).toBeTruthy();
+  expect(screen.getByText("B.zip")).toBeTruthy();
+});
+
+test("tree search keeps ancestors for a pack and the full subtree for a folder", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "PotPvP",
+          relative_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({
+          name: "Melee",
+          relative_path: "PotPvP/Melee",
+          parent_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({ name: "Needle.zip", relative_path: "PotPvP/Melee/Needle.zip", parent_path: "PotPvP/Melee" }),
+        entry({ name: "Other.zip", relative_path: "PotPvP/Melee/Other.zip", parent_path: "PotPvP/Melee" }),
+        entry({
+          name: "UHC",
+          relative_path: "PotPvP/UHC",
+          parent_path: "PotPvP",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({ name: "Bow.zip", relative_path: "PotPvP/UHC/Bow.zip", parent_path: "PotPvP/UHC" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  const search = await screen.findByRole("textbox", { name: "搜索材质名" });
+
+  fireEvent.change(search, { target: { value: "Needle" } });
+  expect(screen.getByText("PotPvP")).toBeTruthy();
+  expect(screen.getByText("Melee")).toBeTruthy();
+  expect(screen.getByText("Needle.zip")).toBeTruthy();
+  expect(screen.queryByText("Other.zip")).toBeNull();
+  expect(screen.queryByText("UHC")).toBeNull();
+
+  fireEvent.change(search, { target: { value: "Melee" } });
+  expect(screen.getByText("PotPvP")).toBeTruthy();
+  expect(screen.getByText("Melee")).toBeTruthy();
+  expect(screen.getByText("Needle.zip")).toBeTruthy();
+  expect(screen.getByText("Other.zip")).toBeTruthy();
+  expect(screen.queryByText("UHC")).toBeNull();
+});
+
+test("tree card filters keep ancestors, show category trees, and include shell children", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Collections", relative_path: "Collections", kind: "classification_folder", category: "folder" }),
+        entry({ name: "Bad.zip", relative_path: "Collections/Bad.zip", parent_path: "Collections", category: "illegal" }),
+        entry({ name: "Good.zip", relative_path: "Collections/Good.zip", parent_path: "Collections" }),
+        entry({ name: "Parent.zip", relative_path: "Parent.zip", kind: "shell", category: "nested" }),
+        entry({ name: "Inner.zip", relative_path: "Parent.zip/Inner.zip", parent_path: "Parent.zip" }),
+        entry({ name: "Other.zip", relative_path: "Parent.zip/Other.zip", parent_path: "Parent.zip" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  const overview = await screen.findByRole("group", { name: "分类概览" });
+
+  fireEvent.click(within(overview).getByText("非法"));
+  expect(screen.getByText("Collections")).toBeTruthy();
+  expect(screen.getByText("Bad.zip")).toBeTruthy();
+  expect(screen.queryByText("Good.zip")).toBeNull();
+
+  fireEvent.click(within(overview).getByText("非法"));
+  fireEvent.click(within(overview).getByText("分类文件夹"));
+  expect(screen.getByText("Collections")).toBeTruthy();
+  expect(screen.getByText("Bad.zip")).toBeTruthy();
+  expect(screen.getByText("Good.zip")).toBeTruthy();
+  expect(screen.queryByText("Parent.zip")).toBeNull();
+
+  fireEvent.click(within(overview).getByText("分类文件夹"));
+  fireEvent.click(within(overview).getByText("嵌套"));
+  expect(screen.getByText("Parent.zip")).toBeTruthy();
+  expect(screen.getByText("Inner.zip")).toBeTruthy();
+  expect(screen.queryByText("Collections")).toBeNull();
+});
+
+test("a single-pack shell chain collapses to one orange nested row", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Wrapper.zip", relative_path: "Wrapper.zip", kind: "shell", category: "nested", causes: ["archive_shell"] }),
+        entry({ name: "Inner.zip", relative_path: "Wrapper.zip/Inner.zip", parent_path: "Wrapper.zip" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  await screen.findByText("Wrapper.zip");
+
+  // The leaf is absorbed; only the merged top row renders.
+  expect(screen.queryByText("Inner.zip")).toBeNull();
+  // No expand toggle on a merged row.
+  expect(screen.queryByRole("button", { name: "展开 Wrapper.zip" })).toBeNull();
+  // The merged row uses the orange nested dot.
+  const row = screen.getByText("Wrapper.zip").closest(".pack-row") as HTMLElement;
+  const dot = row.querySelector(".dot") as HTMLElement;
+  expect(dot.className).toContain("cat-nested");
+});
+
+test("a merged row surfaces the leaf lunar badge", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Wrapper.zip", relative_path: "Wrapper.zip", kind: "shell", category: "nested", causes: ["archive_shell"] }),
+        entry({
+          name: "Inner.zip",
+          relative_path: "Wrapper.zip/Inner.zip",
+          parent_path: "Wrapper.zip",
+          category: "nested",
+          causes: ["nested_container", "lunar_escape"],
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  await screen.findByText("Wrapper.zip");
+  expect(document.querySelector(".lunar-badge")).toBeTruthy();
+});
+
+test("an ignored leaf keeps the shell tree expanded, not merged", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Wrapper.zip", relative_path: "Wrapper.zip", kind: "shell", category: "nested", causes: ["archive_shell"] }),
+        entry({
+          name: "Inner.zip",
+          relative_path: "Wrapper.zip/Inner.zip",
+          parent_path: "Wrapper.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  await screen.findByText("Wrapper.zip");
+  // Ignored leaves do not merge — the shell stays a collapsible folder row,
+  // and as a top-level folder it starts expanded with the leaf visible.
+  expect(screen.getByRole("button", { name: "折叠 Wrapper.zip" })).toBeTruthy();
+  expect(screen.getByText("Inner.zip")).toBeTruthy();
+  // Collapsing hides the ignored leaf.
+  fireEvent.click(screen.getByRole("button", { name: "折叠 Wrapper.zip" }));
+  expect(screen.queryByText("Inner.zip")).toBeNull();
+});
+
+test("folders stay collapsible while a card filter is active", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Root", relative_path: "Root", kind: "classification_folder", category: "folder" }),
+        entry({ name: "A.zip", relative_path: "Root/A.zip", parent_path: "Root", category: "nested" }),
+        entry({ name: "B.zip", relative_path: "Root/B.zip", parent_path: "Root" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  const overview = await screen.findByRole("group", { name: "分类概览" });
+
+  // Activating the nested card expands folders so matches are visible...
+  fireEvent.click(within(overview).getByText("嵌套"));
+  expect(screen.getByText("A.zip")).toBeTruthy();
+  // ...but the user can still collapse the folder back.
+  fireEvent.click(screen.getByRole("button", { name: "折叠 Root" }));
+  expect(screen.queryByText("A.zip")).toBeNull();
+  expect(screen.getByRole("button", { name: "展开 Root" })).toBeTruthy();
+});
+
+test("classification siblings sort folders by name and packs by severity then name", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Root", relative_path: "Root", kind: "classification_folder", category: "folder" }),
+        entry({ name: "z.zip", relative_path: "Root/z.zip", parent_path: "Root" }),
+        entry({ name: "Beta", relative_path: "Root/Beta", parent_path: "Root", kind: "classification_folder", category: "folder" }),
+        entry({ name: "b.zip", relative_path: "Root/b.zip", parent_path: "Root", category: "illegal" }),
+        entry({ name: "Alpha", relative_path: "Root/Alpha", parent_path: "Root", kind: "classification_folder", category: "folder" }),
+        entry({ name: "a.zip", relative_path: "Root/a.zip", parent_path: "Root", category: "illegal" }),
+        entry({ name: "nested.zip", relative_path: "Root/nested.zip", parent_path: "Root", category: "nested" }),
+      ],
+    }),
+  );
+
+  const { container } = render(<App />);
+  await screen.findByText("Root");
+  const names = [...container.querySelectorAll(".pack-row .name")].map((node) => node.textContent);
+  expect(names).toEqual(["Root", "a.zip", "b.zip", "nested.zip", "Alpha", "Beta", "z.zip"]);
+});
+
+test("folder rows open and reveal their own relative path", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "PotPvP", relative_path: "PotPvP", kind: "classification_folder", category: "folder" }),
+        entry({ name: "A.zip", relative_path: "PotPvP/A.zip", parent_path: "PotPvP" }),
+        entry({ name: "B.zip", relative_path: "PotPvP/B.zip", parent_path: "PotPvP" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  const folderName = await screen.findByText("PotPvP");
+  const row = folderName.closest(".pack-row") as HTMLElement;
+  fireEvent.click(folderName);
+  expect(mocked.openPack).toHaveBeenCalledWith("C:\\rp", "PotPvP");
+  fireEvent.click(within(row).getByRole("button", { name: "定位文件位置" }));
+  expect(mocked.revealPack).toHaveBeenCalledWith("C:\\rp", "PotPvP");
+});
+
+test("folder expansion survives view filters and resets after a rescan", async () => {
+  const tree = report({
+    entries: [
+      entry({ name: "Root", relative_path: "Root", kind: "classification_folder", category: "folder" }),
+      entry({ name: "Melee", relative_path: "Root/Melee", parent_path: "Root", kind: "classification_folder", category: "folder" }),
+      entry({ name: "A.zip", relative_path: "Root/Melee/A.zip", parent_path: "Root/Melee" }),
+      entry({ name: "B.zip", relative_path: "Root/Melee/B.zip", parent_path: "Root/Melee" }),
+    ],
+  });
+  mocked.scanDefault.mockResolvedValue(tree);
+  mocked.scanPath.mockResolvedValue({ ...tree, entries: tree.entries.map((item) => ({ ...item })) });
+
+  render(<App />);
+  await screen.findByText("Melee");
+  fireEvent.click(screen.getByRole("button", { name: "展开 Melee" }));
+  expect(screen.getByText("A.zip")).toBeTruthy();
+  const normalCard = screen.getByText("正常").closest("button") as HTMLButtonElement;
+  fireEvent.click(normalCard);
+  fireEvent.click(normalCard);
+  expect(screen.getByText("A.zip")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "重新扫描" }));
+  await act(async () => {});
+  expect(screen.queryByText("A.zip")).toBeNull();
+  expect(screen.getByRole("button", { name: "展开 Melee" })).toBeTruthy();
+});
+
+test("ignored packs filter by their gray card and never enter processing", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "meezoid.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
+        entry({ name: "clean.zip", category: "normal" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+
+  expect(
+    await screen.findByText(
+      "检测到高版本纹理目录 assets/minecraft/textures/item，可能是高版本材质",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(within(screen.getByRole("group", { name: "分类概览" })).getByText("忽略"));
+  expect(screen.getByText("meezoid.zip")).toBeTruthy();
+  expect(screen.queryByText("clean.zip")).toBeNull();
+  expect((screen.getByRole("button", { name: "处理" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(mocked.checkLocks).not.toHaveBeenCalled();
 });
 
 test("pure lunar packs are processable and show no stacked badge", async () => {
@@ -171,6 +580,7 @@ test("stacked lunar shows moon badge; lunar card filter includes them", async ()
         bloated: 0,
         illegal: 0,
         lunar: 2,
+        ignored: 0,
       },
     }),
   );
@@ -229,7 +639,7 @@ test("list orders by category severity, then MC menu order within a group", asyn
         entry({ name: "  spaced.zip", category: "normal" }),
         entry({ name: "mid.zip", category: "bloated" }),
         entry({ name: "wrap.zip", category: "nested" }),
-        entry({ name: "dir", category: "folder" }),
+        entry({ name: "dir", kind: "classification_folder", category: "folder" }),
         entry({ name: "bad.txt", category: "illegal" }),
       ],
     }),
@@ -244,7 +654,7 @@ test("list orders by category severity, then MC menu order within a group", asyn
   expect(names).toEqual([
     "bad.txt", // illegal first
     "wrap.zip", // nested
-    "dir", // folder
+    "dir", // classification folder
     "mid.zip", // bloated
     "  spaced.zip", // normal group: leading spaces sort first (MC menu order)
     "apple.zip", // case-insensitive: APPLE < BANANA < ZETA
@@ -258,7 +668,7 @@ test("list places pure lunar after nested and before folder", async () => {
     report({
       entries: [
         entry({ name: "n.zip", category: "normal" }),
-        entry({ name: "f", category: "folder" }),
+        entry({ name: "f", kind: "classification_folder", category: "folder" }),
         entry({
           name: "L.zip",
           category: "lunar_illegal",
@@ -338,8 +748,153 @@ test("toolbar controls are icon buttons with localized tooltips", async () => {
   expect(rescan.querySelector("svg")).toBeTruthy();
   expect(browse.title).toBe("浏览文件夹");
   expect(rescan.title).toBe("重新扫描");
-  const langWrap = screen.getByRole("combobox", { name: "语言" }).parentElement!;
-  expect(langWrap.querySelector("svg")).toBeTruthy();
+  // Language selection moved into the settings dialog — none in the toolbar.
+  expect(screen.queryByRole("combobox", { name: "语言" })).toBeNull();
+  const gear = screen.getByRole("button", { name: "设置" });
+  expect(gear.querySelector("svg")).toBeTruthy();
+});
+
+test("before settings resolve the boot skeleton shows — never a misleading scanning text", async () => {
+  mocked.getSettings.mockReturnValue(new Promise(() => {}));
+
+  render(<App />);
+
+  expect(
+    document.querySelector('[data-testid="boot-skeleton"]'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/扫描中/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "开始扫描" })).toBeNull();
+});
+
+test("the landing page takes over cleanly once settings resolve", async () => {
+  mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
+
+  render(<App />);
+
+  expect(screen.queryByText(/扫描中/)).toBeNull();
+  expect(
+    await screen.findByRole("button", { name: "开始扫描" }),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="boot-skeleton"]'),
+  ).toBeNull();
+});
+
+test("without the auto-scan setting the app lands idle — no scan is kicked", async () => {
+  mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
+
+  render(<App />);
+
+  const start = await screen.findByRole("button", { name: "开始扫描" });
+  expect(screen.getByText(/尚未扫描/)).toBeTruthy();
+  expect(mocked.scanDefault).not.toHaveBeenCalled();
+  expect(mocked.scanPath).not.toHaveBeenCalled();
+  // Path box pre-filled with the default dir; rescan has nothing to refresh.
+  const box = screen.getByRole("textbox", { name: "扫描目录：" });
+  expect((box as HTMLInputElement).value).toBe("C:\\default\\resourcepacks");
+  expect(mocked.defaultDir).toHaveBeenCalled();
+  expect((screen.getByRole("button", { name: "重新扫描" }) as HTMLButtonElement).disabled).toBe(true);
+  // Right-click offers no rescan menu before the first scan.
+  fireEvent.contextMenu(start);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("landing start button runs scanDefault; a stored custom path is preferred", async () => {
+  mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
+  mocked.scanDefault.mockResolvedValue(report({ entries: [entry({ name: "a.zip" })] }));
+
+  const { unmount } = render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "开始扫描" }));
+  expect(await screen.findByText("a.zip")).toBeTruthy();
+  expect(mocked.scanDefault).toHaveBeenCalledTimes(1);
+  expect(mocked.scanPath).not.toHaveBeenCalled();
+  unmount();
+
+  vi.clearAllMocks();
+  mocked.getSettings.mockResolvedValue({
+    language: "zh-CN",
+    custom_path: "D:\\mc\\resourcepacks",
+  });
+  mocked.scanPath.mockResolvedValue(
+    report({ path: "D:\\mc\\resourcepacks", entries: [entry({ name: "b.zip" })] }),
+  );
+  render(<App />);
+  const start = await screen.findByRole("button", { name: "开始扫描" });
+  // Stored custom path prefills without asking the backend for the default.
+  expect(mocked.defaultDir).not.toHaveBeenCalled();
+  fireEvent.click(start);
+  expect(await screen.findByText("b.zip")).toBeTruthy();
+  expect(mocked.scanPath).toHaveBeenCalledWith("D:\\mc\\resourcepacks");
+  expect(mocked.scanDefault).not.toHaveBeenCalled();
+});
+
+test("typing a path on the landing page and pressing Enter scans it", async () => {
+  mocked.getSettings.mockResolvedValue({ language: "zh-CN" });
+  mocked.scanPath.mockResolvedValue(
+    report({ path: "D:\\other", entries: [entry({ name: "b.zip" })] }),
+  );
+
+  render(<App />);
+  const box = await screen.findByRole("textbox", { name: "扫描目录：" });
+  fireEvent.change(box, { target: { value: "D:\\other" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText("b.zip")).toBeTruthy();
+  expect(mocked.scanPath).toHaveBeenCalledWith("D:\\other");
+  expect(mocked.saveSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ custom_path: "D:\\other" }),
+  );
+});
+
+test("the settings dialog hosts the language select and the auto-scan toggle", async () => {
+  mocked.scanDefault.mockResolvedValue(report({ entries: [entry({ name: "a.zip" })] }));
+
+  render(<App />);
+  await screen.findByText("a.zip");
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+  const dialog = screen.getByRole("dialog", { name: "设置" });
+  // Language select moved here; choosing persists immediately.
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "语言" }), {
+    target: { value: "en" },
+  });
+  expect(mocked.saveSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ language: "en" }),
+  );
+  // Dialog copy follows the new language live.
+  expect(
+    within(dialog).getByRole("heading", { name: "Settings" }),
+  ).toBeTruthy();
+  // Auto-scan checkbox mirrors settings and persists on toggle.
+  const checkbox = within(dialog).getByRole("checkbox", {
+    name: "Scan automatically on startup",
+  }) as HTMLInputElement;
+  expect(checkbox.checked).toBe(true);
+  fireEvent.click(checkbox);
+  expect(mocked.saveSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ auto_scan_on_start: false }),
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+});
+
+test("the settings dialog is reachable from the landing page too", async () => {
+  mocked.getSettings.mockResolvedValue({ language: "zh-CN", auto_scan_on_start: false });
+
+  render(<App />);
+  await screen.findByRole("button", { name: "开始扫描" });
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  const dialog = screen.getByRole("dialog", { name: "设置" });
+  const checkbox = within(dialog).getByRole("checkbox", {
+    name: "启动时自动扫描",
+  }) as HTMLInputElement;
+  expect(checkbox.checked).toBe(false);
+  fireEvent.click(checkbox);
+  expect(mocked.saveSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ auto_scan_on_start: true }),
+  );
+  // Toggling mid-session never kicks a scan itself.
+  expect(mocked.scanDefault).not.toHaveBeenCalled();
+  expect(mocked.scanPath).not.toHaveBeenCalled();
 });
 
 test("scan progress shows a live count while scanning", async () => {
@@ -450,7 +1005,8 @@ test("toolbar groups the path box with browse, search sits in the right grid are
   expect(pathArea.textContent).toContain("扫描目录");
   const box = pathArea.querySelector<HTMLInputElement>(".path-box")!;
   expect(box.value).toBe("C:\\rp");
-  expect(pathArea.lastElementChild).toBe(browse);
+  expect(pathArea.firstElementChild).toBe(browse);
+  expect(browse.nextElementSibling?.classList.contains("path-label")).toBe(true);
   const search = screen.getByRole("textbox", { name: "搜索材质名" });
   expect(search.closest(".search-area")).toBeTruthy();
 });
@@ -617,13 +1173,13 @@ test("footer shows fixed English files-in-total count", async () => {
       entries: [
         entry({ name: "a.zip" }),
         entry({ name: "b.zip", category: "nested" }),
-        entry({ name: "c.zip", category: "folder" }),
+        entry({ name: "category", kind: "classification_folder", category: "folder" }),
       ],
     }),
   );
 
   render(<App />);
-  expect(await screen.findByText("3 files in total")).toBeTruthy();
+  expect(await screen.findByText("2 files in total")).toBeTruthy();
 });
 
 test("footer GitHub button opens the repository URL", async () => {
@@ -751,7 +1307,7 @@ test("confirm dialog groups packs by category order without normal", async () =>
         entry({ name: "good.zip", category: "normal" }),
         entry({ name: "fat.zip", category: "bloated", causes: ["bloated_zip"] }),
         entry({ name: "nest.zip", category: "nested", causes: ["nested_container"] }),
-        entry({ name: "dir", category: "folder", causes: ["folder_pack"] }),
+        entry({ name: "dir", kind: "classification_folder", category: "folder" }),
         entry({ name: "bad.txt", category: "illegal", causes: ["not_zip"] }),
         entry({
           name: "lc.zip",
@@ -772,13 +1328,12 @@ test("confirm dialog groups packs by category order without normal", async () =>
   const illegalAt = body.indexOf("bad.txt");
   const nestedAt = body.indexOf("nest.zip");
   const lunarAt = body.indexOf("lc.zip");
-  const folderAt = body.indexOf("dir");
   const bloatedAt = body.indexOf("fat.zip");
   expect(illegalAt).toBeGreaterThanOrEqual(0);
   expect(nestedAt).toBeGreaterThan(illegalAt);
   expect(lunarAt).toBeGreaterThan(nestedAt);
-  expect(folderAt).toBeGreaterThan(lunarAt);
-  expect(bloatedAt).toBeGreaterThan(folderAt);
+  expect(bloatedAt).toBeGreaterThan(lunarAt);
+  expect(body).not.toContain("dir");
   expect(within(dialog).getByText(/illegal_packs/)).toBeTruthy();
 });
 
@@ -806,10 +1361,11 @@ test("confirming runs processing, shows grouped results, and rescans", async () 
   expect(mocked.scanPath).toHaveBeenCalledWith("C:\\rp");
 });
 
-test("result dialog can copy the report and open plot_temp", async () => {
+test("result dialog can copy the report and open this batch's run folder", async () => {
   mocked.scanDefault.mockResolvedValue(PROBLEM_REPORT());
   mocked.processPacks.mockResolvedValue({
     outcomes: [outcome({ original_name: "junk.txt" })],
+    run_dir: "Plot_2026-08-23_13.46.34",
   });
   mocked.scanPath.mockResolvedValue(report({ entries: [] }));
   const writeText = vi.fn().mockResolvedValue(undefined);
@@ -822,8 +1378,321 @@ test("result dialog can copy the report and open plot_temp", async () => {
 
   fireEvent.click(within(result).getByRole("button", { name: "复制结果" }));
   expect(writeText).toHaveBeenCalledWith(expect.stringContaining("junk.txt"));
-  fireEvent.click(within(result).getByRole("button", { name: "打开 plot_temp" }));
-  expect(mocked.openPlotTemp).toHaveBeenCalled();
+  fireEvent.click(within(result).getByRole("button", { name: "打开本次输出" }));
+  expect(mocked.openPlotTemp).toHaveBeenCalledWith("Plot_2026-08-23_13.46.34");
+});
+
+test("a null run_dir falls back to opening the plot_temp root", async () => {
+  mocked.scanDefault.mockResolvedValue(PROBLEM_REPORT());
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [outcome({ original_name: "junk.txt" })],
+    run_dir: null,
+  });
+  mocked.scanPath.mockResolvedValue(report({ entries: [] }));
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认" }));
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+
+  fireEvent.click(within(result).getByRole("button", { name: "打开本次输出" }));
+  expect(mocked.openPlotTemp).toHaveBeenCalledWith(undefined);
+});
+
+test("archive attachment notices appear in results and copied text", async () => {
+  mocked.scanDefault.mockResolvedValue(PROBLEM_REPORT());
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [outcome({ original_name: "Download.zip/A.zip", action: "converted" })],
+    notices: [
+      {
+        key: "attachments_kept_in_original_archive",
+        values: ["Download.zip"],
+      },
+    ],
+  });
+  mocked.scanPath.mockResolvedValue(report({ entries: [] }));
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText } });
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认" }));
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+
+  expect(within(result).getByText("Download.zip：附件保留在原始压缩文件中")).toBeTruthy();
+  fireEvent.click(within(result).getByRole("button", { name: "复制结果" }));
+  expect(writeText).toHaveBeenCalledWith(
+    expect.stringContaining("Download.zip：附件保留在原始压缩文件中"),
+  );
+});
+
+test("classified pack confirmation and results preserve relative paths", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "PotPvP", relative_path: "PotPvP", kind: "classification_folder", category: "folder" }),
+        entry({ name: "A.zip", relative_path: "PotPvP/A.zip", parent_path: "PotPvP" }),
+        entry({ name: "B.zip", relative_path: "PotPvP/B.zip", parent_path: "PotPvP", category: "bloated", causes: ["root_extras"] }),
+        entry({ name: "C.zip", relative_path: "PotPvP/C.zip", parent_path: "PotPvP", category: "illegal", causes: ["not_zip"] }),
+      ],
+    }),
+  );
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [
+      outcome({ original_name: "PotPvP/B.zip", action: "converted", products: ["PotPvP/B.zip"] }),
+      outcome({ original_name: "PotPvP/C.zip", action: "moved_to_illegal" }),
+    ],
+  });
+  mocked.scanPath.mockResolvedValue(report({ entries: [] }));
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  const confirmation = screen.getByRole("dialog", { name: "确认处理" });
+  expect(within(confirmation).getByText("PotPvP/B.zip")).toBeTruthy();
+  expect(within(confirmation).getByText("PotPvP/C.zip")).toBeTruthy();
+  expect(within(confirmation).queryByText("A.zip")).toBeNull();
+  fireEvent.click(within(confirmation).getByRole("button", { name: "确认" }));
+
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+  expect(within(result).getByText(/PotPvP\/B\.zip → PotPvP\/B\.zip/)).toBeTruthy();
+  expect(within(result).getByText(/PotPvP\/C\.zip/)).toBeTruthy();
+  expect(mocked.checkLocks).toHaveBeenCalledWith("C:\\rp", ["PotPvP/B.zip", "PotPvP/C.zip"]);
+});
+
+test("a folder shell is processable and confirms its real child path", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "Wrapper",
+          relative_path: "Wrapper",
+          kind: "shell",
+          category: "nested",
+          causes: ["folder_shell"],
+        }),
+        entry({
+          name: "A.zip",
+          relative_path: "Wrapper/A.zip",
+          parent_path: "Wrapper",
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  const processButton = await screen.findByRole("button", { name: "处理" });
+  expect((processButton as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(processButton);
+
+  const confirmation = screen.getByRole("dialog", { name: "确认处理" });
+  expect(within(confirmation).getByText("Wrapper → Wrapper/A.zip")).toBeTruthy();
+  expect(mocked.checkLocks).toHaveBeenCalledWith("C:\\rp", ["Wrapper/A.zip"]);
+});
+
+test("an archive shell confirms every planned inner pack and probes the outer file", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "Parent.zip",
+          relative_path: "Parent.zip",
+          kind: "shell",
+          category: "nested",
+          causes: ["archive_shell"],
+        }),
+        entry({ name: "A.zip", relative_path: "Parent.zip/A.zip", parent_path: "Parent.zip" }),
+        entry({ name: "B.zip", relative_path: "Parent.zip/B.zip", parent_path: "Parent.zip", category: "bloated" }),
+        entry({ name: "C.zip", relative_path: "Parent.zip/C.zip", parent_path: "Parent.zip", category: "ignored", ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] } }),
+        entry({ name: "D.zip", relative_path: "Parent.zip/D.zip", parent_path: "Parent.zip", category: "illegal" }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+
+  const confirmation = screen.getByRole("dialog", { name: "确认处理" });
+  expect(
+    within(confirmation).getByText(
+      "Parent.zip → Parent.zip/A.zip, Parent.zip/B.zip, Parent.zip/C.zip, Parent.zip/D.zip",
+    ),
+  ).toBeTruthy();
+  expect(mocked.checkLocks).toHaveBeenCalledWith("C:\\rp", ["Parent.zip"]);
+});
+
+test("an archive classification tree confirms every descendant pack path", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "Download.zip",
+          relative_path: "Download.zip",
+          kind: "shell",
+          category: "nested",
+          causes: ["archive_shell"],
+        }),
+        entry({
+          name: "PotPvP",
+          relative_path: "Download.zip/PotPvP",
+          parent_path: "Download.zip",
+          kind: "classification_folder",
+          category: "folder",
+        }),
+        entry({
+          name: "A.zip",
+          relative_path: "Download.zip/PotPvP/A.zip",
+          parent_path: "Download.zip/PotPvP",
+        }),
+        entry({
+          name: "B.zip",
+          relative_path: "Download.zip/PotPvP/B.zip",
+          parent_path: "Download.zip/PotPvP",
+          category: "bloated",
+        }),
+      ],
+    }),
+  );
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+
+  const confirmation = screen.getByRole("dialog", { name: "确认处理" });
+  expect(
+    within(confirmation).getByText(
+      "Download.zip → Download.zip/PotPvP/A.zip, Download.zip/PotPvP/B.zip",
+    ),
+  ).toBeTruthy();
+  expect(mocked.checkLocks).toHaveBeenCalledWith("C:\\rp", ["Download.zip"]);
+});
+
+test("results append preexisting ignored packs with localized reasons", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "junk.txt", category: "illegal", causes: ["not_zip"] }),
+        entry({
+          name: "meezoid.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
+      ],
+    }),
+  );
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [outcome({ original_name: "junk.txt", action: "moved_to_illegal" })],
+  });
+  mocked.scanPath.mockResolvedValue(
+    report({
+      entries: [
+        entry({
+          name: "meezoid.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
+      ],
+    }),
+  );
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText } });
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认" }));
+
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+  const ignored = within(result).getByText("已忽略（未处理）").parentElement!;
+  expect(
+    within(ignored).getByText(
+      /meezoid\.zip.*检测到高版本纹理目录 assets\/minecraft\/textures\/item，可能是高版本材质/,
+    ),
+  ).toBeTruthy();
+  fireEvent.click(within(result).getByRole("button", { name: "复制结果" }));
+  expect(writeText).toHaveBeenCalledWith(
+    expect.stringContaining(
+      "meezoid.zip: 检测到高版本纹理目录 assets/minecraft/textures/item，可能是高版本材质",
+    ),
+  );
+});
+
+test("results merge newly separated ignored pack with its parent source", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({
+      entries: [entry({ name: "Parent.zip", category: "bloated", causes: ["root_extras"] })],
+    }),
+  );
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [
+      outcome({
+        original_name: "Parent.zip",
+        action: "converted",
+        products: ["Parent.zip"],
+        separated: [{ name: "bonus-modern.zip", parent: "Parent.zip" }],
+      }),
+    ],
+  });
+  mocked.scanPath.mockResolvedValue(
+    report({
+      entries: [
+        entry({ name: "Parent.zip", category: "normal" }),
+        entry({
+          name: "bonus-modern.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/item"] },
+        }),
+        entry({
+          name: "unrelated.zip",
+          category: "ignored",
+          ignore: { key: "modern_texture_layout", values: ["assets/minecraft/textures/block"] },
+        }),
+      ],
+    }),
+  );
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText } });
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认" }));
+
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+  expect(
+    within(result).getByText(
+      /bonus-modern\.zip.*检测到高版本纹理目录 assets\/minecraft\/textures\/item.*由 Parent\.zip 分离/,
+    ),
+  ).toBeTruthy();
+  expect(within(result).queryByText(/unrelated\.zip/)).toBeNull();
+  fireEvent.click(within(result).getByRole("button", { name: "复制结果" }));
+  expect(writeText).toHaveBeenCalledWith(
+    expect.stringContaining(
+      "bonus-modern.zip: 检测到高版本纹理目录 assets/minecraft/textures/item，可能是高版本材质（由 Parent.zip 分离）",
+    ),
+  );
+});
+
+test("rescan failure still shows completed outcomes without guessing separated category", async () => {
+  mocked.scanDefault.mockResolvedValue(
+    report({ entries: [entry({ name: "Parent.zip", category: "bloated", causes: ["root_extras"] })] }),
+  );
+  mocked.processPacks.mockResolvedValue({
+    outcomes: [
+      outcome({
+        original_name: "Parent.zip",
+        action: "converted",
+        products: ["Parent.zip"],
+        separated: [{ name: "bonus.zip", parent: "Parent.zip" }],
+      }),
+    ],
+  });
+  mocked.scanPath.mockRejectedValue(new Error("offline"));
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "处理" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认" }));
+
+  const result = await screen.findByRole("dialog", { name: "处理结果" });
+  expect(within(result).getByText(/Parent\.zip → Parent\.zip/)).toBeTruthy();
+  expect(within(result).getByText(/处理后重新扫描失败/)).toBeTruthy();
+  expect(within(result).queryByText("已忽略（未处理）")).toBeNull();
 });
 
 test("converted outcomes list original and product names", async () => {
@@ -894,6 +1763,7 @@ test("switching language takes effect immediately and persists", async () => {
 
   render(<App />);
   await screen.findByRole("button", { name: "浏览文件夹" });
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
   fireEvent.change(screen.getByRole("combobox", { name: "语言" }), {
     target: { value: "en" },
   });
@@ -905,7 +1775,11 @@ test("switching language takes effect immediately and persists", async () => {
 });
 
 test("a saved custom path is scanned directly on startup", async () => {
-  mocked.getSettings.mockResolvedValue({ language: "zh-CN", custom_path: "D:\\mc\\rp" });
+  mocked.getSettings.mockResolvedValue({
+    language: "zh-CN",
+    custom_path: "D:\\mc\\rp",
+    auto_scan_on_start: true,
+  });
   mocked.scanPath.mockResolvedValue(
     report({ path: "D:\\mc\\rp", entries: [entry({ name: "saved.zip" })] }),
   );

@@ -57,7 +57,7 @@ npm install
 npm run tauri dev      # 开发运行
 npm run test           # 前端测试（Vitest，mock IPC）
 cargo test             # 引擎 + 设置测试
-npm run tauri build    # → target/release/plot.exe
+npm run tauri build    # → .target/cargo/release/plot.exe
 ```
 
 | 目录 | 职责 |

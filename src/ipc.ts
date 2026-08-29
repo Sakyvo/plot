@@ -20,6 +20,11 @@ export function scanPath(path: string): Promise<ScanReport> {
   return invoke<ScanReport>("scan_path", { path });
 }
 
+/** Default resourcepacks path as text — no IO, for pre-filling the landing page. */
+export function defaultDir(): Promise<string> {
+  return invoke("default_dir");
+}
+
 export async function browseFolder(): Promise<string | null> {
   const picked = await open({ directory: true, multiple: false });
   return typeof picked === "string" ? picked : null;
@@ -34,8 +39,8 @@ export function checkLocks(path: string, names: string[]): Promise<string[]> {
   return invoke<string[]>("check_locks", { path, names });
 }
 
-export function openPlotTemp(): Promise<void> {
-  return invoke("open_plot_temp");
+export function openPlotTemp(runDir?: string): Promise<void> {
+  return invoke("open_plot_temp", { runDir });
 }
 
 export function revealPack(dir: string, name: string): Promise<void> {

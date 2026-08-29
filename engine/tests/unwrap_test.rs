@@ -8,6 +8,7 @@ fn opts_for(tmp: &tempfile::TempDir) -> ProcessOptions {
     ProcessOptions {
         resourcepacks: tmp.path().join("rp"),
         plot_temp: tmp.path().join("plot_temp"),
+        run_dir_name: "Plot_2026-08-23_13.46.34".into(),
     }
 }
 
@@ -38,7 +39,10 @@ fn zip_wrapping_a_folder_unwraps_to_the_inner_name() {
 
     let report = process(&opts_for(&tmp)).unwrap();
 
-    assert!(rp.join("Cool Pack v2.zip").exists(), "product named after inner layer");
+    assert!(
+        rp.join("Cool Pack v2.zip").exists(),
+        "product named after inner layer"
+    );
     assert!(!rp.join("download (3).zip").exists());
     let outcome = &report.outcomes[0];
     assert_eq!(outcome.action, "converted");
@@ -58,7 +62,7 @@ fn folder_wrapping_a_zip_unwraps_too() {
 
     assert!(rp.join("Real Pack.zip").exists());
     assert_eq!(scan(&rp).counts.normal, 1);
-    assert!(tmp.path().join("plot_temp/problematic_packs/Wrapper").exists());
+    assert!(!wrapper.exists());
 }
 
 #[test]
@@ -74,7 +78,10 @@ fn zip_inside_zip_inside_folder_unwraps_across_three_layers() {
 
     process(&opts_for(&tmp)).unwrap();
 
-    assert!(rp.join("§bInner Pack.zip").exists(), "deepest layer name wins");
+    assert!(
+        rp.join("§bInner Pack.zip").exists(),
+        "deepest layer name wins"
+    );
     assert_eq!(scan(&rp).counts.normal, 1);
 }
 
@@ -99,8 +106,15 @@ fn a_collection_zip_splits_into_independent_packs() {
     assert!(rp.join("PackA.zip").exists());
     assert!(rp.join("PackB.zip").exists());
     assert!(rp.join("PackC.zip").exists());
-    let outcome = &report.outcomes[0];
-    assert_eq!(outcome.products.len(), 3);
+    assert_eq!(report.outcomes.len(), 3);
+    assert_eq!(
+        report
+            .outcomes
+            .iter()
+            .flat_map(|outcome| &outcome.products)
+            .count(),
+        3
+    );
     assert_eq!(scan(&rp).counts.normal, 3);
 }
 
@@ -118,9 +132,18 @@ fn two_outer_zips_with_the_same_inner_name_both_survive() {
         );
     }
 
-    process(&opts_for(&tmp)).unwrap();
+    let report = process(&opts_for(&tmp)).unwrap();
 
-    assert!(rp.join("§aSoupSkidz Map 7 Pack.zip").exists());
+    let names: Vec<String> = fs::read_dir(&rp)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        rp.join("§aSoupSkidz Map 7 Pack.zip").exists(),
+        "entries={names:?}, outcomes={:?}",
+        report.outcomes
+    );
     assert!(rp.join("§aSoupSkidz Map 7 Pack (1).zip").exists());
     assert_eq!(scan(&rp).counts.normal, 2);
 }
@@ -133,10 +156,7 @@ fn gbk_named_inner_layers_are_decoded_not_mojibake() {
     let (name2, _, _) = encoding_rs::GBK.encode("测试包/assets/minecraft/a.png");
     common::make_raw_zip(
         &rp.join("chinese.zip"),
-        &[
-            (name1.into_owned(), MCMETA),
-            (name2.into_owned(), b"x"),
-        ],
+        &[(name1.into_owned(), MCMETA), (name2.into_owned(), b"x")],
     );
 
     process(&opts_for(&tmp)).unwrap();
@@ -162,8 +182,8 @@ fn nested_pack_missing_mcmeta_gets_unwrapped_and_generated() {
     let product = rp.join("§8! §aInfera.zip");
     assert!(product.exists());
     let f = fs::File::open(&product).unwrap();
-    let mut a = zip::ZipArchive::new(f).unwrap();
-    assert!(a.by_name("pack.mcmeta").is_ok(), "mcmeta generated inside unwrapped layer");
+    let mut archive = zip::ZipArchive::new(f).unwrap();
+    assert!(archive.by_name("pack.mcmeta").is_ok());
     assert_eq!(scan(&rp).counts.normal, 1);
 }
 

@@ -59,7 +59,10 @@ fn parallel_scan_reports_progress_and_matches_serial_scan() {
 
     let events: Mutex<Vec<(String, usize, usize)>> = Mutex::new(Vec::new());
     let report = scan_with_progress(tmp.path(), &ScanOptions::default(), &|p| {
-        events.lock().unwrap().push((p.name.clone(), p.index, p.total));
+        events
+            .lock()
+            .unwrap()
+            .push((p.name.clone(), p.index, p.total));
     });
 
     // classification identical to the serial scan
@@ -86,4 +89,3 @@ fn parallel_scan_reports_progress_and_matches_serial_scan() {
     names.sort();
     assert_eq!(names, vec!["A.zip", "B.zip", "C.txt"]);
 }
-

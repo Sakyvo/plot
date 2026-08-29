@@ -6,13 +6,29 @@ export type Category =
   | "folder"
   | "bloated"
   | "illegal"
-  | "lunar_illegal";
+  | "lunar_illegal"
+  | "ignored";
+
+export type NodeKind =
+  | "pack"
+  | "classification_folder"
+  | "supporting_folder"
+  | "shell";
+
+export interface IgnoreReason {
+  key: string;
+  values: string[];
+}
 
 export interface PackEntry {
   name: string;
+  relative_path: string;
+  parent_path: string | null;
+  kind: NodeKind;
   category: Category;
   causes: string[];
   size_bytes: number;
+  ignore?: IgnoreReason | null;
 }
 
 export interface Counts {
@@ -22,11 +38,13 @@ export interface Counts {
   bloated: number;
   illegal: number;
   lunar: number;
+  ignored: number;
 }
 
 export interface ScanReport {
   path: string;
   status: ScanStatus;
+  total_packs: number;
   entries: PackEntry[];
   counts: Counts;
 }
@@ -37,10 +55,24 @@ export interface PackOutcome {
   products: string[];
   causes: string[];
   detail: string | null;
+  separated?: SeparatedPack[];
+}
+
+export interface SeparatedPack {
+  name: string;
+  parent: string;
 }
 
 export interface ProcessReport {
   outcomes: PackOutcome[];
+  notices?: ProcessNotice[];
+  /** Run folder actually used (name inside plot_temp), null for an empty batch. */
+  run_dir?: string | null;
+}
+
+export interface ProcessNotice {
+  key: string;
+  values: string[];
 }
 
 export interface ProgressEvent {
@@ -52,6 +84,7 @@ export interface ProgressEvent {
 export interface Settings {
   language?: string | null;
   custom_path?: string | null;
+  auto_scan_on_start?: boolean | null;
 }
 
 /** Non-null only when GitHub latest release is newer than this build. */

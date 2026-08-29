@@ -6,8 +6,7 @@ use std::fs;
 use std::io::Read;
 
 /// OTB template: `\!` is the illegal JSON escape Lunar rejects.
-const SICK: &[u8] =
-    br#"{"pack":{"pack_format":1,"description":"\u00A7b\! made by the goose :>"}}"#;
+const SICK: &[u8] = br#"{"pack":{"pack_format":1,"description":"\u00A7b\! made by the goose :>"}}"#;
 
 /// Color kept, illegal backslash removed — healthy for Lunar.
 const PATCHED: &[u8] =
@@ -28,6 +27,7 @@ fn repair_opts(tmp: &tempfile::TempDir) -> ProcessOptions {
     ProcessOptions {
         resourcepacks: tmp.path().join("rp"),
         plot_temp: tmp.path().join("plot_temp"),
+        run_dir_name: "Plot_2026-08-23_13.46.34".into(),
     }
 }
 
@@ -79,10 +79,8 @@ fn section_literal_and_bom_do_not_alone_mark_lunar() {
     let rp = tmp.path().join("rp");
     fs::create_dir_all(&rp).unwrap();
     // literal § (U+00A7 as UTF-8 C2 A7), no invalid escape
-    let with_section: &[u8] =
-        b"{\"pack\":{\"pack_format\":1,\"description\":\"\xc2\xa7b hello\"}}";
-    let with_bom: &[u8] =
-        b"\xef\xbb\xbf{\"pack\":{\"pack_format\":1,\"description\":\"hi\"}}";
+    let with_section: &[u8] = b"{\"pack\":{\"pack_format\":1,\"description\":\"\xc2\xa7b hello\"}}";
+    let with_bom: &[u8] = b"\xef\xbb\xbf{\"pack\":{\"pack_format\":1,\"description\":\"hi\"}}";
     pack_with_mcmeta(&rp, "sec.zip", with_section);
     pack_with_mcmeta(&rp, "bom.zip", with_bom);
 
@@ -106,13 +104,25 @@ fn nested_plus_lunar_keeps_structure_and_stacks_tag() {
     make_zip(&rp.join("wrapped.zip"), &entries);
 
     let report = scan(&rp);
-    let entry = &report.entries[0];
-    assert_eq!(entry.category, Category::Nested);
-    assert!(has_lunar(&entry.causes));
+    let shell = report
+        .entries
+        .iter()
+        .find(|entry| entry.relative_path == "wrapped.zip")
+        .unwrap();
+    assert_eq!(shell.category, Category::Nested);
+    assert!(!has_lunar(&shell.causes));
+    let inner = report
+        .entries
+        .iter()
+        .find(|entry| entry.relative_path == "wrapped.zip/Inner Pack")
+        .unwrap();
+    assert_eq!(inner.category, Category::Bloated);
+    assert!(has_lunar(&inner.causes));
     assert_eq!(report.counts.nested, 1);
+    assert_eq!(report.counts.bloated, 1);
     assert_eq!(report.counts.lunar, 1);
     // multi-tag: sum of counts can exceed pack count
-    assert!(report.counts.nested + report.counts.lunar > report.entries.len());
+    assert_eq!(report.total_packs, 1);
 }
 
 #[test]
@@ -138,7 +148,7 @@ fn bloated_plus_lunar_stacks() {
 }
 
 #[test]
-fn folder_pack_with_lunar_is_folder_plus_tag() {
+fn folder_pack_with_lunar_is_bloated_plus_tag() {
     let tmp = tempfile::tempdir().unwrap();
     let rp = tmp.path().join("rp");
     let pack = rp.join("folderpack");
@@ -148,9 +158,11 @@ fn folder_pack_with_lunar_is_folder_plus_tag() {
 
     let report = scan(&rp);
     let entry = &report.entries[0];
-    assert_eq!(entry.category, Category::Folder);
+    assert_eq!(entry.category, Category::Bloated);
+    assert!(entry.causes.iter().any(|cause| cause == "folder_pack"));
     assert!(has_lunar(&entry.causes));
-    assert_eq!(report.counts.folder, 1);
+    assert_eq!(report.counts.bloated, 1);
+    assert_eq!(report.counts.folder, 0);
     assert_eq!(report.counts.lunar, 1);
 }
 
@@ -183,7 +195,9 @@ fn nested_product_mcmeta_is_patched() {
     assert!(product.exists());
     let mcmeta = read_zip_mcmeta(&product);
     assert!(serde_json::from_slice::<serde_json::Value>(&mcmeta).is_ok());
-    assert!(String::from_utf8(mcmeta).unwrap().contains(r"\u00A7b! made"));
+    assert!(String::from_utf8(mcmeta)
+        .unwrap()
+        .contains(r"\u00A7b! made"));
 }
 
 #[test]
@@ -215,7 +229,10 @@ fn healthy_normal_pack_is_untouched_by_processing() {
     let report = process(&opts).unwrap();
 
     assert!(report.outcomes.is_empty());
-    assert_eq!(fs::read(opts.resourcepacks.join("clean.zip")).unwrap(), before);
+    assert_eq!(
+        fs::read(opts.resourcepacks.join("clean.zip")).unwrap(),
+        before
+    );
 }
 
 #[test]
@@ -228,19 +245,22 @@ fn pure_lunar_pack_is_converted_with_color_kept() {
 
     assert_eq!(report.outcomes.len(), 1);
     assert_eq!(report.outcomes[0].action, "converted");
-    assert!(
-        opts.plot_temp
-            .join("problematic_packs")
-            .join("OTB FPS.zip")
-            .exists()
-    );
+    assert!(opts
+        .plot_temp
+        .join("Plot_2026-08-23_13.46.34")
+        .join("problematic_packs")
+        .join("OTB FPS.zip")
+        .exists());
     let products = &report.outcomes[0].products;
     assert!(!products.is_empty());
     let product = opts.resourcepacks.join(&products[0]);
     assert!(product.exists());
     let mcmeta = read_zip_mcmeta(&product);
     let text = String::from_utf8(mcmeta.clone()).unwrap();
-    assert!(text.contains(r"\u00A7b! made"), "color kept, escape fixed: {text}");
+    assert!(
+        text.contains(r"\u00A7b! made"),
+        "color kept, escape fixed: {text}"
+    );
     assert!(!text.contains(r"\!"), "illegal escape removed: {text}");
     assert!(serde_json::from_slice::<serde_json::Value>(&mcmeta).is_ok());
 }

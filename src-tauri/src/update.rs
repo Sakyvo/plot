@@ -134,10 +134,7 @@ mod tests {
             pick_download_url(&assets, "https://x/rel"),
             "https://x/plot.exe"
         );
-        assert_eq!(
-            pick_download_url(&[], "https://x/rel"),
-            "https://x/rel"
-        );
+        assert_eq!(pick_download_url(&[], "https://x/rel"), "https://x/rel");
     }
 
     #[test]
